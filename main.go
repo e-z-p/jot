@@ -1,13 +1,33 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 )
 
 const store = "store.txt"
 
-func readNotes() ([]byte, error) {
+func readNotes() ([]string, error) {
+	var notes []string
+
+	file, err := os.Open(store)
+	defer file.Close()
+	if err != nil {
+		return []string{}, err
+	}
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		notes = append(notes, string(scanner.Text()))
+	}
+	if err = scanner.Err(); err != nil {
+		return []string{}, err
+	}
+
+	return notes, nil
 }
 
 func writeNote(note string) (int, error) {
@@ -23,6 +43,21 @@ func writeNote(note string) (int, error) {
 	return n, nil
 }
 
+func fuzzyFind(notes []string) error {
+	fzf := exec.Command("fzf")
+	stdin, err := fzf.StdinPipe()
+	defer stdin.Close()
+	if err != nil {
+		log.Fatalf("Error obtaining stdin: %s", err.Error())
+	}
+	for _, n := range notes {
+		stdin.Write([]byte(n))
+	}
+	fzf.Start()
+	err = fzf.Wait()
+	return err
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Expected note or '--read/-r' flag.")
@@ -35,9 +70,11 @@ func main() {
 			fmt.Printf("Error reading notes: %v", err)
 			os.Exit(1)
 		}
-		fmt.Println(notes)
-		// Pass to fzf
-		// Msg
+		err = fuzzyFind(notes)
+		if err != nil {
+			fmt.Printf("Error fuzzy finding notes: %v", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	for i, n := range os.Args[1:] {
@@ -46,6 +83,7 @@ func main() {
 			fmt.Printf("Error writing note '%d': %v", i+1, err)
 			os.Exit(1)
 		}
-		fmt.Printf("Wrote %d bytes\n", bytecount)
+		fmt.Printf("%d bytes written\n", bytecount)
 	}
+	fmt.Printf("jotted %d note(s)\n", len(os.Args[1:]))
 }
